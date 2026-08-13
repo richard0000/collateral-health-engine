@@ -1,19 +1,20 @@
-import { HealthStatus } from './types.js';
+import { HealthStatus, EventType } from './types.js';
 import { Money, LTV } from './value-objects.js';
-import { DomainEvent, RecomputeEvent } from './events.js';
+import { DomainEvent, RecomputeEvent, LinkEvent } from './events.js';
+import { recomputeHealth } from './health-engine.js';
 
 export class CollateralArrangement {
   readonly id: string;
-  readonly collateralAsset: string;
-  
+  private _collateralAsset: string;
+
   private _collateralAmount: number;
   private _assetPrice: Money;
   private _debtRequirement: Money;
-  
+
   private _initialLtvThreshold: LTV;
   private _maintenanceLtvThreshold: LTV;
   private _liquidationLtvThreshold: LTV;
-  
+
   private _currentHealthStatus: HealthStatus;
   private _events: DomainEvent[] = [];
 
@@ -31,7 +32,7 @@ export class CollateralArrangement {
     if (!params.id || params.id.trim() === '') {
       throw new Error('CollateralArrangement ID must be a non-empty string.');
     }
-    
+
     // Assert non-empty asset code
     if (!params.collateralAsset || params.collateralAsset.trim() === '') {
       throw new Error('Collateral asset code must be a non-empty string.');
@@ -62,19 +63,24 @@ export class CollateralArrangement {
     }
 
     this.id = params.id;
-    this.collateralAsset = params.collateralAsset.trim().toUpperCase();
+    this._collateralAsset = params.collateralAsset.trim().toUpperCase();
     this._collateralAmount = params.collateralAmount;
     this._assetPrice = params.assetPrice;
     this._debtRequirement = params.debtRequirement;
     this._initialLtvThreshold = params.initialLtvThreshold;
     this._maintenanceLtvThreshold = params.maintenanceLtvThreshold;
     this._liquidationLtvThreshold = params.liquidationLtvThreshold;
-    
-    // Initialize current health status
-    this._currentHealthStatus = this.evaluateHealthStatus();
+
+    // Initialize current health status using the recompute engine
+    this._currentHealthStatus = HealthStatus.GOOD_STANDING;
+    this._currentHealthStatus = recomputeHealth(this, EventType.RECOMPUTE_EVENT);
   }
 
-  // Getters
+  // Getters & Setters
+  get collateralAsset(): string {
+    return this._collateralAsset;
+  }
+
   get collateralAmount(): number {
     return this._collateralAmount;
   }
@@ -124,6 +130,32 @@ export class CollateralArrangement {
   }
 
   /**
+   * Links a new collateral price/asset to the arrangement (triggers LINK_EVENT rules).
+   */
+  applyLink(collateralAsset: string, newPrice: Money): void {
+    if (!collateralAsset || collateralAsset.trim() === '') {
+      throw new Error('Collateral asset code must be a non-empty string.');
+    }
+    if (newPrice.currency !== this._debtRequirement.currency) {
+      throw new Error(
+        `Currency mismatch: new price currency (${newPrice.currency}) must match debt currency (${this._debtRequirement.currency}).`
+      );
+    }
+
+    const oldLtv = this.calculateCurrentLtv().percentage;
+    const oldStatus = this._currentHealthStatus;
+
+    this._collateralAsset = collateralAsset.trim().toUpperCase();
+    this._assetPrice = newPrice;
+
+    // Evaluate health with LINK_EVENT
+    this.recompute(oldLtv, oldStatus, EventType.LINK_EVENT);
+
+    // Record the LinkEvent
+    this._events.push(new LinkEvent(this.id, this._collateralAsset, this._assetPrice.currency));
+  }
+
+  /**
    * Updates the collateral amount and recomputes health status.
    */
   updateCollateralAmount(newAmount: number): void {
@@ -134,7 +166,7 @@ export class CollateralArrangement {
     const oldStatus = this._currentHealthStatus;
 
     this._collateralAmount = newAmount;
-    this.recompute(oldLtv, oldStatus);
+    this.recompute(oldLtv, oldStatus, EventType.RECOMPUTE_EVENT);
   }
 
   /**
@@ -150,7 +182,7 @@ export class CollateralArrangement {
     const oldStatus = this._currentHealthStatus;
 
     this._assetPrice = newPrice;
-    this.recompute(oldLtv, oldStatus);
+    this.recompute(oldLtv, oldStatus, EventType.RECOMPUTE_EVENT);
   }
 
   /**
@@ -166,7 +198,7 @@ export class CollateralArrangement {
     const oldStatus = this._currentHealthStatus;
 
     this._debtRequirement = newDebt;
-    this.recompute(oldLtv, oldStatus);
+    this.recompute(oldLtv, oldStatus, EventType.RECOMPUTE_EVENT);
   }
 
   /**
@@ -189,44 +221,18 @@ export class CollateralArrangement {
     this._initialLtvThreshold = initial;
     this._maintenanceLtvThreshold = maintenance;
     this._liquidationLtvThreshold = liquidation;
-    this.recompute(oldLtv, oldStatus);
+    this.recompute(oldLtv, oldStatus, EventType.RECOMPUTE_EVENT);
   }
 
-  private recompute(oldLtv: number, oldStatus: HealthStatus): void {
-    const newStatus = this.evaluateHealthStatus();
+  private recompute(oldLtv: number, oldStatus: HealthStatus, event: EventType): void {
+    const newStatus = recomputeHealth(this, event);
     this._currentHealthStatus = newStatus;
-    
+
     const newLtv = this.calculateCurrentLtv().percentage;
 
     // Trigger RecomputeEvent if status or LTV changes
     if (oldStatus !== newStatus || oldLtv !== newLtv) {
       this._events.push(new RecomputeEvent(this.id, oldLtv, newLtv, oldStatus, newStatus));
     }
-  }
-
-  private evaluateHealthStatus(): HealthStatus {
-    const collateralValue = this._collateralAmount * this._assetPrice.value;
-    if (collateralValue === 0) {
-      return this._debtRequirement.value > 0 ? HealthStatus.LIQUIDATION : HealthStatus.GOOD_STANDING;
-    }
-
-    const currentLtv = this._debtRequirement.value / collateralValue;
-    const initialLtv = this._initialLtvThreshold.percentage;
-    const maintenanceLtv = this._maintenanceLtvThreshold.percentage;
-    const liquidationLtv = this._liquidationLtvThreshold.percentage;
-
-    if (currentLtv > liquidationLtv) {
-      return HealthStatus.LIQUIDATION;
-    }
-    if (currentLtv > maintenanceLtv) {
-      return HealthStatus.MAINTENANCE_MARGIN_CALL;
-    }
-    if (currentLtv > initialLtv) {
-      return HealthStatus.INITIAL_MARGIN_CALL;
-    }
-    if (currentLtv > initialLtv * 0.90) {
-      return HealthStatus.NEAR_MARGIN;
-    }
-    return HealthStatus.GOOD_STANDING;
   }
 }

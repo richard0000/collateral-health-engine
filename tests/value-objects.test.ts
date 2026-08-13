@@ -105,8 +105,8 @@ describe('Money Value Object', () => {
 
 describe('LTV Value Object', () => {
   it('should create valid LTV instances', () => {
-    const ltv = new LTV(0.50);
-    expect(ltv.percentage).toBe(0.50);
+    const ltv = new LTV(0.5);
+    expect(ltv.percentage).toBe(0.5);
     expect(ltv.toString()).toBe('50.00%');
   });
 
@@ -125,9 +125,9 @@ describe('LTV Value Object', () => {
   });
 
   it('should compare LTV instances correctly', () => {
-    const l1 = LTV.create(0.40);
-    const l2 = LTV.create(0.50);
-    const l3 = LTV.create(0.50);
+    const l1 = LTV.create(0.4);
+    const l2 = LTV.create(0.5);
+    const l3 = LTV.create(0.5);
 
     expect(l1.isLessThan(l2)).toBe(true);
     expect(l2.isLessThan(l1)).toBe(false);

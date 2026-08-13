@@ -57,7 +57,9 @@ export class Money {
     this.assertSameCurrency(other);
     const result = this.value - other.value;
     if (result < 0) {
-      throw new Error(`Insufficient funds: subtracting ${other.toString()} from ${this.toString()} results in negative value.`);
+      throw new Error(
+        `Insufficient funds: subtracting ${other.toString()} from ${this.toString()} results in negative value.`
+      );
     }
     return new Money(result, this.currency);
   }
@@ -67,7 +69,9 @@ export class Money {
    */
   multiply(factor: number): Money {
     if (!Number.isFinite(factor) || factor < 0) {
-      throw new Error(`Invalid multiplication factor: ${factor}. Factor must be a non-negative finite number.`);
+      throw new Error(
+        `Invalid multiplication factor: ${factor}. Factor must be a non-negative finite number.`
+      );
     }
     return new Money(this.value * factor, this.currency);
   }
@@ -91,7 +95,9 @@ export class Money {
 
   private assertSameCurrency(other: Money): void {
     if (this.currency !== other.currency) {
-      throw new Error(`Currency mismatch: cannot operate on ${this.currency} and ${other.currency}.`);
+      throw new Error(
+        `Currency mismatch: cannot operate on ${this.currency} and ${other.currency}.`
+      );
     }
   }
 }
