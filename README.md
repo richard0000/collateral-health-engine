@@ -128,7 +128,7 @@ Execute the visual state transition smoke test which prints out a detailed conso
 npm run smoke
 ```
 
-For detailed explanations of the test workflow and example outputs, refer to the [Smoke Test Guide](file:///Users/ricardogamarra/Code/collateral-health-engine/docs/smoke-test.md).
+For detailed explanations of the test workflow and example outputs, refer to the [Smoke Test Guide](https://github.com/richard0000/collateral-health-engine/blob/main/docs/smoke-test.md).
 
 ### 4. Build the Library
 
