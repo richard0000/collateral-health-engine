@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
     "lint": "npm run format:check && npm run typecheck",
+    "smoke": "npm run build && node dist/smoke.js",
     "prepare": "husky"
   },
   "keywords": [
